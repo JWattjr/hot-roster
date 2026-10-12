@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
-for stage in [['draft']]+[step for i in range(6) for step in ([['week',str(i)]]+([['moments'],['disputes']] if i==4 else [])+[['close',str(i)]])]+[['settle']]:
+for stage in [['draft']]+[step for i in range(6) for step in ([['week',str(i)]]+([['moments'],['disputes'],['bonds']] if i==4 else [])+[['close',str(i)]])]+[['settle']]:
     proof=json.loads((ROOT/'deploy/proof.json').read_text())
     league=proof.get('league',{})
     if stage[0]=='draft' and league.get('status') not in ('JOINING','DRAFTING'):continue

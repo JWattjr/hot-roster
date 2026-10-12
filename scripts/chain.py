@@ -45,7 +45,7 @@ def fees(c):
     return {'distribution': result['distribution'], 'feeValue': result['feeValue']}
 
 def successful(r):
-    if r.get('value_credited') is True and r.get('status')=='FINALIZED':
+    if r.get('value_credited') is True and r.get('status')=='FINALIZED' and r.get('type')==0 and r.get('consensus_data') is None:
         return True
     leader = (r.get('consensus_data', {}).get('leader_receipt') or [{}])[0]
     status = r.get('status_name', r.get('statusName', r.get('status')))
@@ -86,6 +86,25 @@ def save(proof):
     temporary=ROOT/'deploy/proof.json.tmp'
     temporary.write_text(json.dumps(proof,indent=2),encoding='utf8')
     temporary.replace(target)
+
+def adjudication_label(proof,base):
+    failed=proof.setdefault('failedTransactions',{})
+    name,submission=base,1
+    while True:
+        if name in failed:
+            submission+=1
+            name=base+'-submission-'+str(submission)
+            continue
+        if name in proof['transactions']:
+            path=ROOT/'deploy/receipts'/(name+'.json')
+            receipt=json.loads(path.read_text(encoding='utf8')) if path.exists() else {}
+            if receipt.get('status')=='FINALIZED' and not successful(receipt):
+                assert receipt['hash']==proof['transactions'][name] and int(receipt['value'])==0
+                assert not receipt.get('triggered_transactions')
+                failed[name]=proof['transactions'].pop(name)
+                save(proof)
+                continue
+        return name
 
 def transaction(c, proof, name, address=None, method=None, args=None, code=None, value=0):
     if name not in proof['transactions']:

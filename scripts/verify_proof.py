@@ -28,7 +28,7 @@ def read(address,method,args):
 def verify_receipt(h):
     result=c.provider.make_request('eth_getTransactionByHash',[h])['result']
     assert result['status']=='FINALIZED','Not final: '+h
-    if result.get('value_credited') is True:
+    if result.get('value_credited') is True and result.get('type')==0 and result.get('consensus_data') is None:
         return result
     leader=(result.get('consensus_data',{}).get('leader_receipt') or [{}])[0]
     assert leader.get('execution_result') in ('SUCCESS','FINISHED_WITH_RETURN'),'Failed execution: '+h
@@ -42,6 +42,32 @@ def main():
         receipts[name]=verify_receipt(h)
         print(name,h,'FINALIZED_SUCCESS',flush=True)
         time.sleep(2.6)
+    for name,h in proof.get('failedTransactions',{}).items():
+        failed=c.provider.make_request('eth_getTransactionByHash',[h])['result']
+        assert failed['status']=='FINALIZED' and int(failed['value'])==0
+        assert not failed.get('triggered_transactions')
+        leader=(failed.get('consensus_data',{}).get('leader_receipt') or [{}])[0]
+        assert leader.get('execution_result') not in ('SUCCESS','FINISHED_WITH_RETURN') or failed.get('result_name') not in ('AGREE','MAJORITY_AGREE','SUCCESS')
+        print(name,h,'FINALIZED_ERROR (retained separately)',flush=True)
+        time.sleep(2.6)
+    funding=json.loads((ROOT/'deploy/funding.json').read_text())
+    assert sum(int(t['wei']) for t in funding['transfers'].values())==42
+    for transfer in funding['transfers'].values():
+        credit=verify_receipt(transfer['hash'])
+        assert credit.get('type')==0 and credit['value_credited'] is True
+        assert credit['to_address'].lower()==transfer['wallet'] and int(credit['value'])==int(transfer['wei'])
+        time.sleep(2.6)
+    adapter=json.loads((ROOT/'deploy/wallet-adapter-check.json').read_text())
+    assert int(verify_receipt(adapter['hash'])['value'])==0
+    time.sleep(2.6)
+    rejected=json.loads((ROOT/'deploy/wallet-adapter-rejection-check.json').read_text())
+    rejected_receipt=c.provider.make_request('eth_getTransactionByHash',[rejected['hash']])['result']
+    assert rejected_receipt['status']=='FINALIZED' and int(rejected_receipt['value'])==0
+    rejection=rejected_receipt['consensus_data']['leader_receipt'][0]
+    assert rejection['execution_result']=='ERROR'
+    assert base64.b64decode(rejection['result'])==b'\x01[EXPECTED] owner configures once'
+    time.sleep(2.6)
+    assert sum(map(int,proof['valueCalls'].values()))==42,'Deposit budget differs from approved entries and bonds'
     for name,contract in proof['contracts'].items():
         source=(ROOT/'contracts'/contract['source']).read_text(encoding='utf8')
         assert hashlib.sha256(source.encode()).hexdigest()==contract['sha256'],'Local source hash changed: '+name
@@ -64,6 +90,12 @@ def main():
     for dispute in proof['disputes']:
         assert read(proof['contracts']['RulebookCourt']['address'],'get_dispute',[dispute['id']])==dispute
         assert dispute['rule_quote'] in league['rulebook']
+        assert dispute['bond_claimed'] and dispute['gen_bond']=='1','Dispute bond has not been paid'
+        parent=receipts['claim-bond-'+dispute['id']]
+        credit=receipts['claim-bond-'+dispute['id']+'-child-0']
+        assert credit['hash'] in parent['triggered_transactions']
+        assert credit['value_credited'] is True and int(credit['value'])==1
+        assert credit['to_address'].lower()==dispute['bond_recipient']
     missing=[]
     for verdict in ('AWARDED','NOT_AWARDED'):
         if not any(m['verdict']==verdict for m in proof['moments']):missing.append('Missing live '+verdict+' card')
@@ -77,6 +109,16 @@ def main():
     assert claim['status']=='PAID'
     credit=verify_receipt(claim['child'])
     assert credit['value_credited'] is True and credit['to_address'].lower()==winner and int(credit['value'])==int(claim['amount'])
+    time.sleep(2.6)
+    assert int(pool['paid'])==40,'All allocated entry wei have not been paid'
+    for recipient,amount in pool['payouts'].items():
+        if int(amount)==0:continue
+        paid=pool['claims'][recipient]
+        assert paid['status']=='PAID' and int(paid['amount'])==int(amount)
+        transfer=verify_receipt(paid['child'])
+        assert transfer['value_credited'] is True and transfer['to_address'].lower()==recipient
+        assert int(transfer['value'])==int(amount)
+        time.sleep(2.6)
     assert league['status']=='COMPLETED' and proof['sourceCommit']
     print('Six chart reads, deployed sources, final standings and exact native winner credit verified.',flush=True)
     assert not missing,'; '.join(missing)

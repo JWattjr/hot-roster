@@ -6,7 +6,8 @@ test('finality requires execution success and consensus agreement',()=>{
  assert.equal(transactionState({status:'FINALIZED',result_name:'MAJORITY_DISAGREE',txExecutionResultName:'FINISHED_WITH_RETURN'}),'FINALIZED_ERROR');
  assert.equal(transactionState({status:'FINALIZED',txExecutionResultName:'FINISHED_WITH_ERROR'}),'FINALIZED_ERROR');
  assert.equal(transactionState({status:'FINALIZED',txExecutionResultName:'FINISHED_WITH_RETURN'}),'FINALIZED_SUCCESS');
- assert.equal(transactionState({status:'FINALIZED',value_credited:true}),'FINALIZED_SUCCESS');
+ assert.equal(transactionState({status:'FINALIZED',type:0,consensus_data:null,value_credited:true}),'FINALIZED_SUCCESS');
+ assert.equal(transactionState({status:'FINALIZED',type:2,value_credited:true,consensus_data:{leader_receipt:[{execution_result:'ERROR'}]}}),'FINALIZED_ERROR');
 });
 test('UI publishes only roster positions',()=>{
  const rows=Array.from({length:100},(_,i)=>({position:i+1,title:'Song '+i,artist_credit:'Artist',last_week:0,debut:false}));

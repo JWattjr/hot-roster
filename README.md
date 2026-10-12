@@ -61,7 +61,7 @@ Run `genvm-lint contracts/<name>.py` for each of the five contracts. `verify:pro
 
 ## Live release and replay
 
-`scripts/release.py` exposes resumable stages: deploy, create, fund, draft, week, moments, disputes, close, settle, record. Every hash is saved before polling; rerunning resumes that hash. Never delete a pending hash to resend. `scripts/replay.py` sequences the remaining stages, preserving the frozen dispute windows.
+`scripts/release.py` exposes resumable stages: deploy, create, fund, draft, week, moments, disputes, bonds, close, settle, record. Every hash is saved before polling; rerunning resumes that hash. Terminal zero-value adjudication failures are retained separately before a new submission; deposits and pending calls are never resent. Never delete a pending hash to resend. `scripts/replay.py` sequences the remaining stages, preserving the frozen dispute windows.
 
 The demo drafts twenty real songs across May 25–June 29, 2024. It includes actual debuts, climbs and a No. 1 change. Evidence research and saved real HTML fixtures live under `deploy/` and `tests/fixtures/`. The owner approved exactly 42 wei: four 10-wei entries and two 1-wei bonds. Funding and entry receipts are recorded; scripts refuse automatic funding without local approval. StudioNet GEN is simulated currency.
 

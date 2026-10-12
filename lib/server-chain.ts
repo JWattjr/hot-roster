@@ -1,6 +1,6 @@
 import 'server-only';
 import './rpc-user-agent';
-import {createClient} from 'genlayer-js';
+import {createClient,decodeLocalnetTransaction} from 'genlayer-js';
 import {studionet} from 'genlayer-js/chains';
 import {TransactionHashVariant} from 'genlayer-js/types';
 import type {TransactionHash} from 'genlayer-js/types';
@@ -30,7 +30,7 @@ export async function leagueSnapshot(id:string):Promise<Snapshot>{
  const disputeIds=await read<string[]>('RulebookCourt','get_ids',[id],60000,()=>league.status==='COMPLETED');
  const moments:Moment[]=[],disputes:Dispute[]=[];
  for(const key of momentIds)moments.push(await read<Moment>('MomentJudge','get_claim',[key],30000,resolved));
- for(const key of disputeIds)disputes.push(await read<Dispute>('RulebookCourt','get_dispute',[key],30000,resolved));
+ for(const key of disputeIds)disputes.push(await read<Dispute>('RulebookCourt','get_dispute',[key],30000,value=>resolved(value)&&(value.gen_bond==='0'||value.bond_claimed)));
  const pool=await read<Pool>('SeasonPool','get_pool',[id]);
  const weeks:ChartRead[]=[];
  for(let i=0;i<league.weeks.length;i++){
@@ -38,11 +38,13 @@ export async function leagueSnapshot(id:string):Promise<Snapshot>{
   const chart=await read<ChartRead>('ChartReader','get_read',[id,i],30000,value=>resolved(value)||league.weeks[i].status==='CLOSED');
   weeks.push(rosterOnly(chart));
  }
- return {league,weeks,moments,disputes,pool,recordedAt:new Date().toISOString(),contracts:(proof as unknown as Snapshot).contracts,transactions:{},completed:league.status==='COMPLETED'};
+ return {league,weeks,moments,disputes,pool,recordedAt:new Date().toISOString(),contracts:(proof as unknown as Snapshot).contracts,transactions:id===proof.leagueId?proof.transactions:{},sourceCommit:proof.sourceCommit,submissionReady:id===proof.leagueId&&proof.submissionReady,blockers:id===proof.leagueId?proof.blockers:[],completed:league.status==='COMPLETED'};
 }
 export async function transaction(hash:string){
  return limited('tx:'+hash,async()=>{
-  const r=await client.getTransaction({hash:hash as TransactionHash}) as unknown as Record<string,unknown>;
+  const raw=await client.getTransaction({hash:hash as TransactionHash});
+  if(!raw)throw Error('Receipt is not available yet. The saved hash will be retried.');
+  const r=decodeLocalnetTransaction(raw as never) as unknown as Record<string,unknown>;
   const state=transactionState(r);
   let appealDeadline:number|null=null;
   if(state==='ACCEPTED'){
@@ -51,9 +53,10 @@ export async function transaction(hash:string){
    if(r.leader_only===false&&r.appealed!==true&&start>0&&Number(windowSeconds)>0&&processing>=0&&Number.isInteger(failed)&&failed>=0)appealDeadline=start+processing+Number(windowSeconds)*0.8**failed;
   }
   const leader=(r.consensus_data as {leader_receipt?:{genvm_result?:unknown}[]})?.leader_receipt?.[0];
-  const result=(r.consensus_data as {leader_receipt?:{result?:{payload?:{readable?:string}}}[]})?.leader_receipt?.[0]?.result;
+  const result=(r.consensus_data as {leader_receipt?:{result?:{payload?:{readable?:string}|string}}[]})?.leader_receipt?.[0]?.result;
   let createdLeagueId:string|null=null;
-  try{const id=JSON.parse(result?.payload?.readable??'null');if(typeof id==='string'&&/^league-\d+$/.test(id)&&state==='FINALIZED_SUCCESS')createdLeagueId=id;}catch{}
-  return {hash,state,createdLeagueId,children:state==='FINALIZED_SUCCESS'?(r.triggered_transactions??[]):[],appealDeadline,error:state==='FINALIZED_ERROR'?JSON.stringify(leader?.genvm_result??r.result_name??'Contract execution failed').slice(0,500):null};
+  try{const id=JSON.parse(typeof result?.payload==='object'?result.payload?.readable??'null':'null');if(typeof id==='string'&&/^league-\d+$/.test(id)&&state==='FINALIZED_SUCCESS'&&String(r.to_address).toLowerCase()===contracts.League.address.toLowerCase())createdLeagueId=id;}catch{}
+  const executionError=typeof result?.payload==='string'?result.payload:JSON.stringify(leader?.genvm_result??r.result_name??'Contract execution failed');
+  return {hash,state,createdLeagueId,children:state==='FINALIZED_SUCCESS'?(r.triggered_transactions??[]):[],appealDeadline,error:state==='FINALIZED_ERROR'?executionError.slice(0,500):null};
  },10000,value=>value.state==='FINALIZED_SUCCESS'||value.state==='FINALIZED_ERROR');
 }

@@ -14,7 +14,7 @@ export function transactionState(r:Record<string,unknown>):TxState{
  const consensus=r.consensus_data as {leader_receipt?:{execution_result?:string;result?:unknown}[]}|undefined;
  const status=String(r.status_name??r.statusName??r.status??'');
  if(status==='FINALIZED'||status==='7'){
-  if(r.value_credited===true)return 'FINALIZED_SUCCESS';
+  if(r.value_credited===true&&String(r.type)==='0'&&!r.consensus_data)return 'FINALIZED_SUCCESS';
   const execution=String(r.txExecutionResultName??consensus?.leader_receipt?.[0]?.execution_result??'');
   const agreement=String(r.result_name??r.resultName??'');
   return ['SUCCESS','FINISHED_WITH_RETURN'].includes(execution)&&(!agreement||['AGREE','MAJORITY_AGREE','SUCCESS'].includes(agreement))?'FINALIZED_SUCCESS':'FINALIZED_ERROR';

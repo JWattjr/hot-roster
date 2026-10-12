@@ -5,7 +5,7 @@ import sys
 import time
 import subprocess
 from datetime import datetime,timedelta
-from chain import ROOT,client,transaction,read,save,signer
+from chain import ROOT,client,transaction,read,save,signer,adjudication_label
 
 NAMES={'League':'league.py','ChartReader':'chart_reader.py','MomentJudge':'moment_judge.py','RulebookCourt':'rulebook_court.py','SeasonPool':'season_pool.py'}
 DATES=[(datetime(2024,5,25)+timedelta(weeks=i)).strftime('%Y-%m-%d') for i in range(6)]
@@ -39,6 +39,23 @@ def write(name,contract,method,args,index=0,value=0):
             save(proof)
     return transaction(client(index),proof,name,proof['contracts'][contract]['address'],method,args,value=value)
 
+def adjudicate(label,contract,key,index=0):
+    method='get_claim' if contract=='MomentJudge' else 'get_dispute'
+    for _ in range(3):
+        current=read(c,proof['contracts'][contract]['address'],method,[key])
+        if current.get('status')=='RESOLVED':return
+        attempt=current.get('attempt',0) if current.get('status')=='PENDING_FINALITY' else current.get('attempt',0)+1
+        name=adjudication_label(proof,label if attempt==1 else label+'-attempt-'+str(attempt))
+        try:
+            write(name,contract,'adjudicate',[key],index)
+        except RuntimeError as error:
+            if 'Finalized execution failed:' not in str(error):raise
+            adjudication_label(proof,name)
+            print('Retained terminal failed judgment; retrying a new zero-value submission:',name,flush=True)
+    if read(c,proof['contracts'][contract]['address'],method,[key]).get('status')=='RESOLVED':return
+    record()
+    raise RuntimeError('Judgment remained retryable after three real attempts; receipts were retained.')
+
 if stage=='deploy':
     for name,file in NAMES.items():
         if name in proof['contracts']:
@@ -53,7 +70,7 @@ if stage=='deploy':
     save(proof)
 elif stage=='create':
     # Creation fixes fees but sends zero value. Funding is a separate gated step.
-    rulebook=(ROOT/'lib/rules.ts').read_text().split('`')[1]
+    rulebook=(ROOT/'lib/rules.ts').read_text(encoding='utf8').split('`')[1]
     write('create-demo','League','create',['After Hours · Summer 2024',json.dumps(DATES),4,json.dumps(['TOUR_ANNOUNCED','NEW_VERSION','AWARD','PRESS_SPOTLIGHT']),rulebook,10,1800])
     ids=read(c,proof['contracts']['League']['address'],'get_ids')
     proof['leagueId']=ids[-1]
@@ -77,6 +94,15 @@ elif stage=='draft':
     record()
 elif stage=='week':
     i=int(sys.argv[2])
+    if i==4:
+        league=read(c,proof['contracts']['League']['address'],'get_league',[proof['leagueId']])
+        if league['weeks'][i]['status']=='OPEN':
+            owner=proof['demoPlayers'][3]['wallet']
+            slot=next(n for n,s in enumerate(league['rosters'][owner]) if s['primary_artist']=='Taylor Swift')
+            incoming='Fortnight (feat. Post Malone) [BLOND:ISH Remix]'
+            write('demo-swap-remix-week-4','League','swap',[proof['leagueId'],slot,incoming,'Taylor Swift'],3)
+            proof['demoSwap']={'week':i,'wallet':owner,'slot':slot,'incoming':incoming,'primary_artist':'Taylor Swift','officialReleaseURL':'https://music.apple.com/us/song/1747337110','releaseDate':'2024-05-22'}
+            save(proof)
     write('lock-week-'+str(i),'League','lock_week',[proof['leagueId']])
     current=read(c,proof['contracts']['ChartReader']['address'],'get_read',[proof['leagueId'],i])
     if current.get('status')!='RESOLVED':
@@ -99,7 +125,7 @@ elif stage=='moments':
         write(name,'MomentJudge','claim',[proof['leagueId'],i,selected['key'],card,EVIDENCE])
         ids=read(c,proof['contracts']['MomentJudge']['address'],'get_ids',[proof['leagueId']])
         claim_id=next(key for key in ids if read(c,proof['contracts']['MomentJudge']['address'],'get_claim',[key])['card']['id']==card)
-        write('judge-'+card,'MomentJudge','adjudicate',[claim_id])
+        adjudicate('judge-'+card,'MomentJudge',claim_id)
     record()
 elif stage=='disputes':
     # Challenge genuine results. Expected outcomes are never injected on-chain.
@@ -107,14 +133,32 @@ elif stage=='disputes':
     i=r['current_week']
     chart=read(c,proof['contracts']['ChartReader']['address'],'get_read',[proof['leagueId'],i])
     selected=next(s for s in chart['songs'] if s['primary_artist']=='Post Malone')
-    owner=next(n for n,p in enumerate(proof['demoPlayers']) if p['wallet']==selected['owner'])
-    challenger=(owner+1)%4
-    cases=[('featured','chart',selected['key'],'The featured Morgan Wallen credit represents the same I Had Some Help recording. Apply the frozen featured-credit rule; uphold if the reader already matched it correctly.'),('tour','moment',next(m['id'] for m in proof['moments'] if m['card']['id']=='TOUR_ANNOUNCED'),'The source must show an official tour announcement with new dates during this chart week, rather than a rumour or festival lineup. Review the original award under the frozen rulebook.')]
+    challenger=2  # This demo wallet holds the two owner-approved bond wei.
+    chart_case=('featured','chart',selected['key'],'The featured Morgan Wallen credit represents the same I Had Some Help recording. Apply the frozen featured-credit rule; uphold if the reader already matched it correctly.')
+    remix_index=next((n for n,s in enumerate(chart['songs']) if 'BLOND:ISH Remix' in s['title']),None)
+    expected=next((row for row in chart['rows'] if row['title'].casefold()=='fortnight' and 'Taylor Swift' in row['artist_credit']),None)
+    if remix_index is not None and expected is not None and chart['matches'][remix_index]['position']!=expected['position']:
+        remix=chart['songs'][remix_index]
+        chart_case=('remix','chart',remix['key'],'The drafted Fortnight BLOND:ISH remix is an official version of the same underlying Taylor Swift song, with Post Malone featured. The frozen rulebook explicitly counts official remixes and featured credits. The original reader position '+str(chart['matches'][remix_index]['position'])+' differs from the Fortnight row in the same dated chart. Re-read that row and apply the frozen rule; determine the correction independently.')
+    cases=[chart_case,('tour','moment',next(m['id'] for m in proof['moments'] if m['card']['id']=='TOUR_ANNOUNCED'),'The source must show an official tour announcement with new dates during this chart week, rather than a rumour or festival lineup. Review the original award under the frozen rulebook.')]
+    judgments=[]
     for label,kind,key,argument in cases:
         write('open-dispute-'+label,'RulebookCourt','open_dispute',[proof['leagueId'],i,kind,key,argument],challenger,1)
         ids=read(c,proof['contracts']['RulebookCourt']['address'],'get_ids',[proof['leagueId']])
         dispute_id=next(d for d in ids if read(c,proof['contracts']['RulebookCourt']['address'],'get_dispute',[d])['item']['kind']==kind)
-        write('rule-dispute-'+label,'RulebookCourt','adjudicate',[dispute_id],challenger)
+        judgments.append((label,dispute_id))
+    # Register both cases while their windows are open before a slow judgment.
+    for label,dispute_id in judgments:
+        adjudicate('rule-dispute-'+label,'RulebookCourt',dispute_id,challenger)
+    record()
+elif stage=='bonds':
+    for ruling in proof.get('disputes',[]):
+        recipient=ruling['bond_recipient'] if ruling['status']=='RESOLVED' else ruling['challenger']
+        idx=next(i for i,p in enumerate(proof['demoPlayers']) if p['wallet']==recipient)
+        receipt=write('claim-bond-'+ruling['id'],'RulebookCourt','claim_bond',[ruling['id']],idx)
+        child=receipt['triggered_transactions'][0]
+        credit=json.loads((ROOT/'deploy/receipts'/('claim-bond-'+ruling['id']+'-child-0.json')).read_text())
+        assert credit.get('value_credited') is True and credit['to_address'].lower()==recipient and int(credit['value'])==1
     record()
 elif stage=='close':
     i=int(sys.argv[2])
@@ -142,6 +186,14 @@ elif stage=='settle':
     receipt=json.loads((ROOT/'deploy/receipts/claim-winner.json').read_text())
     child=receipt['triggered_transactions'][0]
     write('verify-winner-credit','SeasonPool','verify_claim',[proof['leagueId'],winner,1,proof['transactions']['claim-winner'],child],idx)
+    record()
+    for recipient,amount in proof['pool']['payouts'].items():
+        if recipient==winner or int(amount)==0:continue
+        idx=next(i for i,p in enumerate(proof['demoPlayers']) if p['wallet']==recipient)
+        label='claim-player-'+str(idx)
+        receipt=write(label,'SeasonPool','claim',[proof['leagueId'],1],idx)
+        child=receipt['triggered_transactions'][0]
+        write('verify-player-'+str(idx)+'-credit','SeasonPool','verify_claim',[proof['leagueId'],recipient,1,proof['transactions'][label],child],idx)
     record()
 else:
     record()
