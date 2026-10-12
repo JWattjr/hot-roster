@@ -69,3 +69,5 @@ Settlement and payout verification:
 - The immutable historical rule text preserves three originally misdecoded en dashes; its exact hash and scoring constants remain verifiable. Future seeds read UTF-8.
 
 The independent audit compares final receipts, deployed sources, six 100-row digests, frozen rosters, score arithmetic, match records, standings, bond recipients and all 40 wei of native payout credits. Its complete readiness check must still reject the missing live OVERTURNED outcome. The final week archive returned HTTP 503 on two later browser User-Agent checks; the earlier finalized validator judgment is preserved, but current evidence reachability is limited.
+
+Final audit result: exit code 1 solely for `Missing live OVERTURNED dispute`. All 126 successful replay receipts, one separately retained failed consensus receipt, five deployed sources, six chart reads, scoring, state equality, two bond credits and all 40 payout wei passed. See [machine-readable result](../deploy/proof-verification.json) and the full verifier output above.
