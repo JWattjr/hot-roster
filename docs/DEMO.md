@@ -1,6 +1,6 @@
 # Two-minute demo script
 
-Use this script after the proof manifest passes. Until then, present the pending stages accurately; do not narrate missing outcomes as completed. No Portal submission is part of this demo.
+The six-week replay and all 40 wei of payouts are completed. Both actual Court outcomes are UPHELD; the required live OVERTURNED outcome is missing. Disclose that gap using the script below. No Portal submission is part of this demo.
 
 **0:00–0:20 — The league.** Open the season without a wallet. “Hot Roster is fantasy football for the Billboard charts, refereed by GenLayer. Four teams drafted five songs for six actual summer 2024 chart weeks.” Show standings and select a team's trading-card roster. Point out the recorded-proof label and week-by-week values.
 

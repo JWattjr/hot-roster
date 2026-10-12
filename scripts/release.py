@@ -26,6 +26,9 @@ def record():
         save(proof)
 
 def write(name,contract,method,args,index=0,value=0):
+    if method in ('adjudicate','read_week','verify_claim'):
+        assert value==0
+        name=adjudication_label(proof,name)
     if value:
         approval=ROOT/'.secrets/deposit-approval.json'
         require_approval=approval.exists() and json.loads(approval.read_text()).get('approvedTotalWei')=='42'

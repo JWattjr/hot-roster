@@ -36,6 +36,51 @@ def verify_receipt(h):
     if isinstance(leader.get('result'),str):
         assert base64.b64decode(leader['result'])[:1]==b'\x00','Rollback: '+h
     return result
+
+def verify_scoring(league,charts,moments,disputes):
+    stats={p:{'points':0,'wins':0,'losses':0,'ties':0} for p in league['players']}
+    adjustments={p:0 for p in league['players']}
+    rulings={d['item_id']:d for d in disputes if d['status']=='RESOLVED'}
+    claims={m['id']:m for m in moments}
+    for i,week in enumerate(league['weeks']):
+        assert week['status']=='CLOSED'
+        expected={p:0 for p in league['players']}
+        rows={r['position']:r for r in charts[i]['rows']}
+        for song,match in zip(week['songs'],charts[i]['matches']):
+            ruling=rulings.get('chart:'+league['id']+':'+str(i)+':'+song['key'],{})
+            position=ruling['corrected_position'] if ruling.get('verdict')=='OVERTURNED' else match['position']
+            row=rows.get(position,{'last_week':0,'debut':False})
+            base=25 if position==1 else 15 if 2<=position<=10 else 8 if 11<=position<=40 else 3 if 41<=position<=100 else 0
+            base+=5 if position>0 and row['debut'] else 0
+            base+=3 if position>0 and row['last_week']-position>=10 else 0
+            assert week['details'][song['key']]['position']==position
+            assert week['details'][song['key']]['base']==base
+            expected[song['owner']]+=base
+        for key in week['claims']:
+            claim=claims[key]
+            ruling=rulings.get('moment:'+key,{})
+            verdict=ruling['corrected_verdict'] if ruling.get('verdict')=='OVERTURNED' else claim['verdict']
+            if claim['status']=='RESOLVED' and verdict=='AWARDED':
+                card=next(c for c in league['cards'] if c['id']==claim['card']['id'])
+                assert card==claim['card']
+                expected[claim['song']['owner']]+=card['points']
+        assert week['scores']==expected,'Weekly scoring differs from chart rows and frozen cards'
+        for p,value in expected.items():stats[p]['points']+=value
+        for a,b in league['schedule'][i]:
+            if 'BYE' in (a,b):continue
+            x,y=expected[a],expected[b]
+            stats[a]['wins']+=int(x>y);stats[a]['losses']+=int(x<y);stats[a]['ties']+=int(x==y)
+            stats[b]['wins']+=int(y>x);stats[b]['losses']+=int(y<x);stats[b]['ties']+=int(x==y)
+    for d in disputes:
+        if d['status']=='RESOLVED' and d['verdict']=='UPHELD':
+            adjustments[d['challenger']]-=3
+            adjustments[d['opponent']]+=3
+    assert league['adjustments']==adjustments
+    for row in league['standings']:
+        stats[row['wallet']]['points']+=adjustments[row['wallet']]
+        assert all(row[k]==value for k,value in stats[row['wallet']].items())
+    expected_order=sorted(stats,key=lambda p:(-stats[p]['points'],-stats[p]['wins'],p))
+    assert [r['wallet'] for r in league['standings']]==expected_order
 def main():
     receipts={}
     for name,h in proof['transactions'].items():
@@ -96,6 +141,7 @@ def main():
         assert credit['hash'] in parent['triggered_transactions']
         assert credit['value_credited'] is True and int(credit['value'])==1
         assert credit['to_address'].lower()==dispute['bond_recipient']
+    verify_scoring(league,proof['weeks'],proof['moments'],proof['disputes'])
     missing=[]
     for verdict in ('AWARDED','NOT_AWARDED'):
         if not any(m['verdict']==verdict for m in proof['moments']):missing.append('Missing live '+verdict+' card')
@@ -104,6 +150,16 @@ def main():
     pool=read(proof['contracts']['SeasonPool']['address'],'get_pool',[league['id']])
     assert pool==proof['pool'] and pool['status']=='SETTLED'
     assert sum(map(int,pool['payouts'].values()))==int(pool['total'])==40
+    percentages=[60,30,10] if len(league['standings'])>=4 else [100]
+    expected_payouts={p:0 for p in league['players']}
+    rank=0
+    while rank<len(league['standings']):
+        tied=[row for row in league['standings'] if row['points']==league['standings'][rank]['points']]
+        share=40*sum(percentages[rank:rank+len(tied)])//(100*len(tied))
+        for row in tied:expected_payouts[row['wallet']]=share
+        rank+=len(tied)
+    expected_payouts[league['creator']]+=40-sum(expected_payouts.values())
+    assert {p:int(v) for p,v in pool['payouts'].items()}==expected_payouts
     winner=league['standings'][0]['wallet']
     claim=pool['claims'][winner]
     assert claim['status']=='PAID'

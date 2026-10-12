@@ -8,7 +8,7 @@ Friends draft five songs, play weekly head-to-head matchups, and challenge chart
 
 ## Release status
 
-This release is being verified on StudioNet. `deploy/proof.json` is the authoritative receipt manifest. Its `completed` and `submissionReady` flags remain false until the complete live replay passes verification. Pending results are visible as pending, never populated from mocked tests. See [verification](docs/VERIFICATION.md).
+The real six-week StudioNet season is completed and all 40 entry wei were credited to the top three teams. `deploy/proof.json` is the authoritative receipt manifest. Both actual Court decisions are UPHELD; the required live OVERTURNED result is missing, so `completed` and `submissionReady` remain false. No mocked verdict fills that gap. See the [release report](docs/RELEASE_REPORT.md) and [verification scope](docs/VERIFICATION.md).
 
 ## Architecture
 
