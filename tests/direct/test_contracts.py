@@ -268,3 +268,99 @@ def test_pool_refund_finality_duplicate_claim(pool,direct_vm):
     c.claim('league-1',1)
     with direct_vm.expect_revert('transfer still pending'):c.claim('league-1',2)
     assert json.loads(c.get_pool('league-1'))['claims'][owner]['status']=='PENDING'
+
+def test_moment_three_claim_limit_and_membership(moment,direct_vm,direct_alice):
+    c,state=moment
+    original=state['league']['weeks'][0]['songs'][0]
+    for i in range(4):
+        state['league']['weeks'][0]['songs'].append({**original,'key':'song-'+str(i),'title':'Song '+str(i)})
+    url='https://en.wikipedia.org/w/index.php?oldid=123'
+    for i in range(3):c.claim('league-1',0,'song-'+str(i),'TOUR_ANNOUNCED',url)
+    with direct_vm.expect_revert('at most three claims'):c.claim('league-1',0,'song-3','TOUR_ANNOUNCED',url)
+    direct_vm.sender=direct_alice
+    with direct_vm.expect_revert('active league player'):c.claim('league-1',0,'song-3','TOUR_ANNOUNCED',url)
+
+def test_pool_exact_entry_and_membership(pool,direct_vm,direct_alice):
+    c,state,owner=pool
+    direct_vm.value=10
+    with direct_vm.expect_revert('exact frozen entry fee'):c.enter('league-1')
+    direct_vm.value=11
+    direct_vm.sender=direct_alice
+    with direct_vm.expect_revert('join before entry cutoff'):c.enter('league-1')
+
+def test_league_unauthorized_registration_and_correction_rescore(league,direct_vm,monkeypatch):
+    c,key,players=league
+    finish_draft(c,key,players,direct_vm)
+    c.lock_week(key)
+    with direct_vm.expect_revert('MomentJudge only'):c.register_claim(key,0,'claim-1')
+    with direct_vm.expect_revert('RulebookCourt only'):c.register_dispute(key,0,'dispute-1',to_hex(players[0]),to_hex(players[1]),3)
+    direct_vm.sender=bytes.fromhex(ADDRESSES[1][2:])
+    c.register_claim(key,0,'claim-1')
+    direct_vm.sender=bytes.fromhex(ADDRESSES[2][2:])
+    c.register_dispute(key,0,'dispute-1',to_hex(players[0]).lower(),to_hex(players[1]).lower(),3)
+    frozen=json.loads(c.get_league(key))
+    selected=frozen['weeks'][0]['songs'][0]
+    state={'league':frozen,'chart':{'status':'RESOLVED','finalized_at':T,'songs':frozen['weeks'][0]['songs'],'matches':[{'position':0,'reason':'Absent'} for _ in range(20)],'rows':[{'position':1,'last_week':1,'debut':False}]},'claims':{'claim-1':{'status':'RESOLVED','finalized_at':T,'verdict':'NOT_AWARDED','song':selected,'card':{'points':6}}},'rulings':{'chart:'+key+':0:'+selected['key']:{'status':'RESOLVED','verdict':'OVERTURNED','corrected_position':1},'moment:claim-1':{'status':'RESOLVED','verdict':'OVERTURNED','corrected_verdict':'AWARDED'}},'disputes':{'dispute-1':{'status':'RESOLVED','verdict':'OVERTURNED','deadline':T+60}}}
+    stub(monkeypatch,state)
+    for player in players:
+        direct_vm.sender=player
+        c.ready(key)
+    warp(direct_vm,T+60)
+    c.close_week(key)
+    result=json.loads(c.get_league(key))
+    assert result['weeks'][0]['scores'][selected['owner']]==31
+    assert result['weeks'][0]['details'][selected['key']]['position']==1
+    assert result['weeks'][0]['details'][selected['key']]['moments']==6
+    assert result['bonds']['dispute-1']['status']=='RETURNED'
+
+def pending_refund(pool,vm):
+    c,state,owner=pool
+    vm.value=11
+    c.enter('league-1')
+    vm.value=0
+    warp(vm,T+200)
+    c.settle('league-1')
+    self_call(vm,c.finalize_pool,'league-1')
+    vm.deal(vm._contract_address,11)
+    c.claim('league-1',1)
+    return c,owner
+
+def mock_credit(vm,monkeypatch,owner,credited=True,alter=None):
+    parent_hash='0x'+'a'*64
+    child_hash='0x'+'b'*64
+    contract=to_hex(vm._contract_address).lower()
+    parent={'status':'FINALIZED','from_address':owner,'to_address':contract,'triggered_transactions':[child_hash],'data':{'calldata':{'method':'claim','args':['league-1',1]}}}
+    child={'status':'FINALIZED','triggered_by':parent_hash,'from_address':contract,'to_address':owner,'value':11,'value_credited':credited}
+    if alter:alter(parent,child)
+    responses=iter([parent,child])
+    monkeypatch.setattr(vm,'_match_web_mock',lambda url,method='GET':{'response':{'status':200,'headers':{},'body':json.dumps({'result':next(responses)}).encode()},'method':'POST'})
+    return parent_hash,child_hash
+
+def test_pool_verified_credit_and_no_double_payout(pool,direct_vm,monkeypatch):
+    c,owner=pending_refund(pool,direct_vm)
+    parent,child=mock_credit(direct_vm,monkeypatch,owner)
+    c.verify_claim('league-1',owner,1,parent,child)
+    result=json.loads(c.get_pool('league-1'))
+    assert result['claims'][owner]['status']=='PAID' and result['paid']=='11'
+    with direct_vm.expect_revert('no unclaimed payout'):c.claim('league-1',2)
+
+def test_pool_verified_failed_credit_can_retry(pool,direct_vm,monkeypatch):
+    c,owner=pending_refund(pool,direct_vm)
+    parent,child=mock_credit(direct_vm,monkeypatch,owner,False)
+    c.verify_claim('league-1',owner,1,parent,child)
+    assert json.loads(c.get_pool('league-1'))['claims'][owner]['status']=='FAILED'
+    direct_vm.deal(direct_vm._contract_address,11)
+    c.claim('league-1',2)
+    assert json.loads(c.get_pool('league-1'))['claims'][owner]['attempt']==2
+
+@pytest.mark.parametrize('field',['parent-origin','child-link','child-amount','attempt'])
+def test_pool_rejects_unrelated_receipts(pool,direct_vm,monkeypatch,field):
+    c,owner=pending_refund(pool,direct_vm)
+    def alter(parent,child):
+        if field=='parent-origin':parent['from_address']=ADDRESSES[0]
+        elif field=='child-link':child['triggered_by']='0x'+'c'*64
+        elif field=='child-amount':child['value']=12
+        else:parent['data']['calldata']['args']=['league-1',2]
+    parent,child=mock_credit(direct_vm,monkeypatch,owner,alter=alter)
+    with direct_vm.expect_revert():c.verify_claim('league-1',owner,1,parent,child)
+    assert json.loads(c.get_pool('league-1'))['claims'][owner]['status']=='PENDING'

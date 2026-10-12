@@ -4,6 +4,8 @@
 
 Friends draft five songs, play weekly head-to-head matchups, and challenge chart matches and moment claims against a frozen rulebook. Validators interpret evidence; Python code calculates points, standings and wei.
 
+**Live app:** https://hot-roster-genlayer.vercel.app · **Public source:** https://github.com/JWattjr/hot-roster
+
 ## Release status
 
 This release is being verified on StudioNet. `deploy/proof.json` is the authoritative receipt manifest. Its `completed` and `submissionReady` flags remain false until the complete live replay passes verification. Pending results are visible as pending, never populated from mocked tests. See [verification](docs/VERIFICATION.md).

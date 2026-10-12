@@ -64,10 +64,11 @@ def main():
     for dispute in proof['disputes']:
         assert read(proof['contracts']['RulebookCourt']['address'],'get_dispute',[dispute['id']])==dispute
         assert dispute['rule_quote'] in league['rulebook']
-    assert any(m['verdict']=='AWARDED' for m in proof['moments']),'Missing live awarded card'
-    assert any(m['verdict']=='NOT_AWARDED' for m in proof['moments']),'Missing live rejected card'
-    assert any(d['verdict']=='OVERTURNED' for d in proof['disputes']),'Missing live overturned dispute'
-    assert any(d['verdict']=='UPHELD' for d in proof['disputes']),'Missing live upheld dispute'
+    missing=[]
+    for verdict in ('AWARDED','NOT_AWARDED'):
+        if not any(m['verdict']==verdict for m in proof['moments']):missing.append('Missing live '+verdict+' card')
+    for verdict in ('OVERTURNED','UPHELD'):
+        if not any(d['verdict']==verdict for d in proof['disputes']):missing.append('Missing live '+verdict+' dispute')
     pool=read(proof['contracts']['SeasonPool']['address'],'get_pool',[league['id']])
     assert pool==proof['pool'] and pool['status']=='SETTLED'
     assert sum(map(int,pool['payouts'].values()))==int(pool['total'])==40
@@ -76,6 +77,9 @@ def main():
     assert claim['status']=='PAID'
     credit=verify_receipt(claim['child'])
     assert credit['value_credited'] is True and credit['to_address'].lower()==winner and int(credit['value'])==int(claim['amount'])
-    assert league['status']=='COMPLETED' and proof['completed'] and proof['sourceCommit']
+    assert league['status']=='COMPLETED' and proof['sourceCommit']
+    print('Six chart reads, deployed sources, final standings and exact native winner credit verified.',flush=True)
+    assert not missing,'; '.join(missing)
+    assert proof['completed'],'Manifest does not claim completion'
     print('Complete replay, source, standings, outcomes and native payout verified. No write was sent.')
 if __name__=='__main__':main()
