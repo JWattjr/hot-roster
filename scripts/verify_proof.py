@@ -4,6 +4,8 @@ import hashlib
 import importlib.metadata
 import json
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from eth_account import Account
 from genlayer_py import create_client,studionet
@@ -14,10 +16,21 @@ assert importlib.metadata.version('genlayer-py')=='0.18.0'
 ROOT=Path(__file__).resolve().parent.parent
 proof=json.loads((ROOT/'deploy/proof.json').read_text(encoding='utf8'))
 _post=provider.requests.post
+_rpc_lock=threading.Lock()
+_rpc_next=0.0
 def browser_post(url,**kwargs):
+    global _rpc_next
     kwargs['headers']={**kwargs.get('headers',{}),'User-Agent':'Mozilla/5.0 HotRosterProof/1.0'}
     kwargs.setdefault('timeout',60)
-    return _post(url,**kwargs)
+    for attempt in range(3):
+        with _rpc_lock:
+            start=max(time.monotonic(),_rpc_next)
+            _rpc_next=start+2.6
+        time.sleep(max(0,start-time.monotonic()))
+        response=_post(url,**kwargs)
+        if response.status_code not in (502,503,504) or attempt==2:return response
+        print('Transient read-only RPC HTTP',response.status_code,'retry',attempt+1,flush=True)
+        time.sleep(10)
 provider.requests.post=browser_post
 # Disposable caller only: gen_call requires an account, but no method signs.
 c=create_client(chain=studionet,account=Account.create())
@@ -81,12 +94,67 @@ def verify_scoring(league,charts,moments,disputes):
         assert all(row[k]==value for k,value in stats[row['wallet']].items())
     expected_order=sorted(stats,key=lambda p:(-stats[p]['points'],-stats[p]['wins'],p))
     assert [r['wallet'] for r in league['standings']]==expected_order
+
+def verify_custom_case(case):
+    assert case and case.get('leagueId'),'No live custom-rulebook league recorded'
+    league=read(proof['contracts']['League']['address'],'get_league',[case['leagueId']])
+    assert league==case['league'] and league['status']=='COMPLETED','Custom league is not finalized and completed'
+    assert len(league['players'])==4 and len(league['dates'])==4 and league['entry_fee']=='0'
+    assert hashlib.sha256(league['rulebook'].encode()).hexdigest()==league['rulebook_hash']
+    charts=[]
+    for i in range(4):
+        chart=read(proof['contracts']['ChartReader']['address'],'get_read',[league['id'],i])
+        assert chart==case['weeks'][i] and chart.get('status')=='RESOLVED'
+        assert len(chart['rows'])==100 and len(chart['matches'])==20
+        assert hashlib.sha256(json.dumps(chart['rows'],sort_keys=True,separators=(',',':')).encode()).hexdigest()==chart['digest']
+        assert chart['songs']==league['weeks'][i]['songs']
+        charts.append(chart)
+        print('Custom chart',chart['date'],'100 rows and frozen match vector verified.',flush=True)
+    ids=read(proof['contracts']['RulebookCourt']['address'],'get_ids',[league['id']])
+    assert ids==[d['id'] for d in case['disputes']]
+    actual=[]
+    for saved in case['disputes']:
+        ruling=read(proof['contracts']['RulebookCourt']['address'],'get_dispute',[saved['id']])
+        assert ruling==saved and ruling['rulebook']==league['rulebook']
+        assert ruling['rule_quote'] in league['rulebook'] and ruling['rulebook_hash']==league['rulebook_hash']
+        assert ruling['item']['url']==charts[ruling['week']]['source'] and ruling['item']['digest']==charts[ruling['week']]['digest']
+        assert ruling['evidence_quote'] in json.dumps(charts[ruling['week']]['rows'],ensure_ascii=False)
+        assert ruling['gen_bond']=='0' and ruling['bond_recipient']==ruling['challenger']
+        actual.append(ruling)
+    target=next(d for d in actual if d['item']['song']['key']==case['targetKey'])
+    assert target['status']=='RESOLVED' and target['verdict']=='OVERTURNED' and target['corrected_position']==0
+    assert target['item']['song']['title']=='Fortnight' and target['item']['song']['primary_artist']=='Post Malone'
+    generic=charts[target['week']]['matches'][next(i for i,s in enumerate(charts[target['week']]['songs']) if s['key']==case['targetKey'])]
+    assert generic==case['genericMatch'] and generic['position']>0 and generic['position']==target['item']['original_verdict']
+    row=next(r for r in charts[0]['rows'] if r['position']==generic['position'])
+    assert row==case['targetRow']
+    import re
+    lead=re.split(r'\b(?:Featuring|feat\.|with)\b',row['artist_credit'],maxsplit=1,flags=re.I)[0]
+    assert 'Post Malone' in row['artist_credit'] and 'Post Malone' not in lead
+    detail=league['weeks'][target['week']]['details'][case['targetKey']]
+    assert detail['position']==0 and detail['base']==0
+    bond=league['bonds'][target['id']]
+    assert bond['status']=='RETURNED' and bond['bond']==3 and bond['challenger']==target['challenger']
+    assert league['adjustments'][target['challenger']]==0
+    rescore=case['rescore']
+    assert rescore['receipt']==proof['transactions']['custom-close-week-0']
+    assert rescore['genericPosition']==generic['position'] and rescore['genericPoints']==15
+    assert rescore['correctedPosition']==0 and rescore['correctedPoints']==0
+    assert rescore['bondStatus']=='RETURNED' and rescore['pointsBond']==3 and rescore['genBondWei']=='0'
+    assert case['transactions']=={k:v for k,v in proof['transactions'].items() if k.startswith('custom-')}
+    verify_scoring(league,charts,case['moments'],actual)
+    print('Live custom OVERTURNED, exact clause/evidence, code rescore and returned three-point bond verified.',flush=True)
+    return actual
 def main():
     receipts={}
-    for name,h in proof['transactions'].items():
-        receipts[name]=verify_receipt(h)
-        print(name,h,'FINALIZED_SUCCESS',flush=True)
-        time.sleep(2.6)
+    # Independent immutable receipt reads overlap network latency. Every actual
+    # RPC POST shares the 2.6-second gate, keeping starts below 24 per minute.
+    items=list(proof['transactions'].items())
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for (name,h),receipt in zip(items,pool.map(verify_receipt,[h for _,h in items])):
+            receipts[name]=receipt
+            if name.startswith('custom-'):assert int(receipt['value'])==0,'Custom case sent an unapproved deposit'
+            print(name,h,'FINALIZED_SUCCESS',flush=True)
     for name,h in proof.get('failedTransactions',{}).items():
         failed=c.provider.make_request('eth_getTransactionByHash',[h])['result']
         assert failed['status']=='FINALIZED' and int(failed['value'])==0
@@ -119,6 +187,7 @@ def main():
         deployed=c.provider.make_request('gen_getContractCode',[contract['address']])['result']
         raw=base64.b64decode(deployed) if isinstance(deployed,str) else b''
         assert hashlib.sha256(raw).hexdigest()==contract['sha256'],'Deployed source differs: '+name
+        print('Deployed source verified:',name,flush=True)
         time.sleep(2.6)
     assert proof.get('leagueId'),'No replay league created'
     league=read(proof['contracts']['League']['address'],'get_league',[proof['leagueId']])
@@ -142,11 +211,12 @@ def main():
         assert credit['value_credited'] is True and int(credit['value'])==1
         assert credit['to_address'].lower()==dispute['bond_recipient']
     verify_scoring(league,proof['weeks'],proof['moments'],proof['disputes'])
+    custom_disputes=verify_custom_case(proof.get('customRulebookCase'))
     missing=[]
     for verdict in ('AWARDED','NOT_AWARDED'):
         if not any(m['verdict']==verdict for m in proof['moments']):missing.append('Missing live '+verdict+' card')
     for verdict in ('OVERTURNED','UPHELD'):
-        if not any(d['verdict']==verdict for d in proof['disputes']):missing.append('Missing live '+verdict+' dispute')
+        if not any(d['status']=='RESOLVED' and d['verdict']==verdict for d in proof['disputes']+custom_disputes):missing.append('Missing live '+verdict+' dispute')
     pool=read(proof['contracts']['SeasonPool']['address'],'get_pool',[league['id']])
     assert pool==proof['pool'] and pool['status']=='SETTLED'
     assert sum(map(int,pool['payouts'].values()))==int(pool['total'])==40
@@ -178,6 +248,5 @@ def main():
     assert league['status']=='COMPLETED' and proof['sourceCommit']
     print('Six chart reads, deployed sources, final standings and exact native winner credit verified.',flush=True)
     assert not missing,'; '.join(missing)
-    assert proof['completed'],'Manifest does not claim completion'
-    print('Complete replay, source, standings, outcomes and native payout verified. No write was sent.')
+    print('Complete replay, source, standings, outcomes and native payout verified. No write was sent. Readiness flags may now be enabled.')
 if __name__=='__main__':main()

@@ -7,6 +7,7 @@ import {chartDates,draftTurn,explorer,shortAddress,type Snapshot,type Song,type 
 import {DEFAULT_RULEBOOK,CARDS} from '@/lib/rules';
 import {SONGS} from '@/lib/song-catalog';
 import {connectWallet} from '@/lib/wallet';
+import {CustomRulebookCaseView} from './custom-rulebook-case';
 
 const NAV=[{id:'season',label:'The season',icon:Trophy},{id:'draft',label:'Draft room',icon:Disc3},{id:'week',label:'This week',icon:Radio},{id:'disputes',label:'The rulings',icon:Scale},{id:'proof',label:'On-chain proof',icon:ShieldCheck}];
 const labels:Record<string,string>={SUBMITTED:'Submitted',PENDING:'Validators working',ACCEPTED:'Accepted · appeal window',FINALIZED_SUCCESS:'Finalized · success',FINALIZED_ERROR:'Finalized · error'};
@@ -18,6 +19,7 @@ export function RosterApp({initial,view}:{initial:Snapshot;view:string}){
  const [snapshot,setSnapshot]=useState(initial),[account,setAccount]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState(''),[live,setLive]=useState(false),[loading,setLoading]=useState(false);
  const [txs,setTxs]=useState<TrackedTx[]>([]),[now,setNow]=useState(Date.now());
  const txRef=useRef<TrackedTx[]>([]);
+ const leagueRequest=useRef(0);
  useEffect(()=>{txRef.current=txs},[txs]);
  const [query,setQuery]=useState(''),[songTitle,setSongTitle]=useState(''),[artist,setArtist]=useState(''),[selectedWeek,setSelectedWeek]=useState(0),[selectedPlayer,setSelectedPlayer]=useState('');
  const [evidence,setEvidence]=useState(''),[preview,setPreview]=useState(''),[claimSong,setClaimSong]=useState(''),[claimCard,setClaimCard]=useState('TOUR_ANNOUNCED');
@@ -29,12 +31,12 @@ export function RosterApp({initial,view}:{initial:Snapshot;view:string}){
  const myRoster=league?.rosters[account]??[],players=league?.players??[];
  const route=(page:string)=>'/'+(page==='season'?'':page)+(leagueId?'?league='+leagueId:'');
  const update=useCallback(async(id=leagueId)=>{
-  if(!id)return;setLoading(true);
-  try{const r=await fetch('/api/chain?league='+encodeURIComponent(id));const value=await r.json();if(!r.ok)throw Error(value.error);setSnapshot(value);setLive(true);setError('');}
-  catch(e){setError(e instanceof Error?e.message:'Chain read failed. Your recorded proof is still available.');}
-  finally{setLoading(false)}
+  if(!id)return;const request=++leagueRequest.current;setLoading(true);
+  try{const r=await fetch('/api/chain?league='+encodeURIComponent(id));const value=await r.json();if(request!==leagueRequest.current)return;if(!r.ok)throw Error(value.error);setSnapshot(value);setLive(true);setError('');}
+  catch(e){if(request===leagueRequest.current)setError(e instanceof Error?e.message:'Chain read failed. Your recorded proof is still available.');}
+  finally{if(request===leagueRequest.current)setLoading(false)}
  },[leagueId]);
- useEffect(()=>{setSnapshot(initial);setLive(false)},[initial]);
+ useEffect(()=>{leagueRequest.current++;setSnapshot(initial);setLive(false)},[initial]);
  useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem('hot-roster-transactions')??'[]');if(Array.isArray(saved))setTxs(saved.filter(t=>/^0x[0-9a-f]{64}$/i.test(t.hash)).slice(-30));const wallet=sessionStorage.getItem('hot-roster-wallet');if(wallet)setAccount(wallet);}catch{}},[]);
  useEffect(()=>{try{localStorage.setItem('hot-roster-transactions',JSON.stringify(txs))}catch{}},[txs]);
  useEffect(()=>{if(params.get('league'))void update(params.get('league')!);},[params,update]);
@@ -84,6 +86,8 @@ export function RosterApp({initial,view}:{initial:Snapshot;view:string}){
    <div className="league-head"><div><h1>{view==='create'?'Build your league.':view==='draft'?'Make your picks.':view==='week'?'Every position counts.':view==='disputes'?'Let the record decide.':view==='proof'?'The receipts are in.':league?.name??'After Hours'}</h1><p>{view==='create'?'Pick a season. Freeze the rules. Invite your people.':league?`${league.players.length} players · ${league.dates.length} chart weeks · 5 songs per roster`:'Fantasy football for the Billboard charts, refereed by GenLayer.'}</p></div>{view!=='create'&&<div className="season-state"><Status value={league?.status??'PREPARING'}/><span>{league?.replay?'SUMMER 2024 REPLAY':'YOUR MUSIC LEAGUE'}</span></div>}</div>
    {view!=='create'&&<div className="proof-line"><span><ShieldCheck size={15}/>{live?'Live finalized-state read':'Recorded on-chain proof'}{snapshot.recordedAt?' · '+new Date(snapshot.recordedAt).toLocaleDateString('en-GB'):''}</span><button disabled={loading||!leagueId} onClick={()=>void update()}><RefreshCw size={14} className={loading?'spin':''}/>{loading?'Reading chain…':'Read live state'}</button></div>}
 
+   {view==='season'&&snapshot.customRulebookCase?.leagueId&&<nav className="case-switcher" aria-label="Recorded leagues"><Link aria-current={leagueId===snapshot.mainLeagueId?'page':undefined} href={'/?league='+snapshot.mainLeagueId}>Main season</Link><Link aria-current={leagueId===snapshot.customRulebookCase.leagueId?'page':undefined} href={'/?league='+snapshot.customRulebookCase.leagueId+'#custom-rulebook'}>Custom rulebook</Link></nav>}
+   {view==='season'&&snapshot.customRulebookCase&&leagueId===snapshot.customRulebookCase.leagueId&&<CustomRulebookCaseView proof={snapshot.customRulebookCase}/>}
    {view==='create'?<CreateForm busy={busy} submit={(args)=>void send('Create league','League','create',args)}/>:!league?<section className="empty-scoreboard"><Disc3 size={48}/><h2>The replay is warming up.</h2><p>The evidence-source probe is finalized. Five contracts and the real six-week season are being prepared. Completed results appear here as they are proven.</p><Link className="button" href="/proof">Inspect deployment receipts<ArrowUpRight size={16}/></Link><Link className="text-link" href="/create">Start your own league</Link></section>:<>
    {league.status==='JOINING'&&view!=='proof'&&<section className="join-strip"><div><h2>Your league is taking shape.</h2><p>Share <strong>{league.id}</strong> with 4–8 friends. The draft follows join order.</p></div><label>Player name<input value={joinName} onChange={e=>setJoinName(e.target.value)} placeholder="Your team name" maxLength={40}/></label>{action('Join league','League','join',[league.id,joinName],member||!joinName||players.length>=league.max_players)}{member&&BigInt(league.entry_fee)>0n&&action('Pay '+league.entry_fee+' wei entry','SeasonPool','enter',[league.id],!!snapshot.pool?.entries?.[account],BigInt(league.entry_fee))}{players.length>=league.max_players&&<p className="fine-print">League full · the creator can start once all entries are paid.</p>}{owner&&action('Start snake draft','League','start_draft',[league.id],players.length<4)}</section>}
 

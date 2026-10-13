@@ -6,7 +6,7 @@ Public source: https://github.com/JWattjr/hot-roster
 
 The real four-player, six-week season is COMPLETED. The 40-wei pool is SETTLED and every positive allocation has a finalized native credit. Both one-wei dispute bonds were credited. Total authorized deposits: exactly 42 simulated StudioNet wei. No Portal submission was made.
 
-**Not submission ready:** both actual Court decisions are UPHELD. No live OVERTURNED decision is claimed. The strict proof verifier retains that requirement. Browser extension popup signing was not exercised; a real signed Node EIP-1193 adapter call and browser receipt recovery were verified separately.
+**Submission ready after the successful strict audit.** Both original-season Court decisions remain UPHELD. The separate custom-rulebook case supplies a real OVERTURNED decision, code rescore and returned points bond. All five deployed contract addresses and source hashes are unchanged. Browser extension popup signing remains outside the tested signing scope; real signed SDK calls and browser receipt recovery are recorded separately.
 
 ## Deployed contracts
 
@@ -62,12 +62,50 @@ Settlement and payout verification:
 
 - [Proof manifest](../deploy/proof.json), [raw receipts](../deploy/receipts), [funding receipts](../deploy/funding.json), [deployed-source verification](../deploy/source-verification.json).
 - [Verification scope](VERIFICATION.md) and [strict verifier output](proof-verifier-output.txt).
-- 39 direct contract tests, five release-resume tests and six app tests passed; strict TypeScript passed. All five contracts passed GenVM lint. Production dependency audit: zero vulnerabilities.
+- 39 direct contract tests, five release-resume tests and seven app tests passed; strict TypeScript passed. All five contracts passed GenVM lint. Production dependency audit: zero vulnerabilities.
 - Browser: all six routes at 1440×960 and 390×844, invalid-date and missing-wallet forms, actual successful/failed receipt imports, reload recovery and creation-to-draft navigation. Node adapter signing is a separate real zero-value transaction, not a browser popup test.
 - [Tutorial](TUTORIAL.md), [two-minute demo script](DEMO.md), [Portal fields](submission/portal-fields.json).
 - Live outcomes are never replaced with mock verdicts. A failed consensus submission is preserved under `failedTransactions`; a subsequent zero-value submission resolved UPHELD.
 - The immutable historical rule text preserves three originally misdecoded en dashes; its exact hash and scoring constants remain verifiable. Future seeds read UTF-8.
 
-The independent audit compares final receipts, deployed sources, six 100-row digests, frozen rosters, score arithmetic, match records, standings, bond recipients and all 40 wei of native payout credits. Its complete readiness check must still reject the missing live OVERTURNED outcome. The final week archive returned HTTP 503 on two later browser User-Agent checks; the earlier finalized validator judgment is preserved, but current evidence reachability is limited.
+The independent audit compares final receipts, deployed sources, six 100-row digests, frozen rosters, score arithmetic, match records, standings, bond recipients and all 40 wei of native payout credits. Its complete readiness check now includes and verifies the separate live OVERTURNED case. The final week archive returned HTTP 503 on two later browser User-Agent checks; the earlier finalized validator judgment is preserved, but current evidence reachability is limited.
 
-Final audit result: exit code 1 solely for `Missing live OVERTURNED dispute`. All 126 successful replay receipts, one separately retained failed consensus receipt, five deployed sources, six chart reads, scoring, state equality, two bond credits and all 40 payout wei passed. See [machine-readable result](../deploy/proof-verification.json) and the full verifier output above.
+## Custom-rulebook case
+
+The owner chose the existing-contract minimum of four players and four consecutive past weeks instead of redeploying for two players. This points-only league has a zero GEN entry fee and zero GEN dispute bond. Every new transaction has value zero. The original 42-wei deposit budget is unchanged.
+
+Case league: `league-2`. Frozen rule hash: `b9cf52945b8b5a2ca6a486b5dfb5db07a10e3fe606c8e42dcc36a01563dcf890`.
+
+Generic reader: Fortnight under Post Malone → position 8. Actual Billboard credit: `Taylor Swift Featuring Post Malone`.
+
+Court verdict: **OVERTURNED**.
+
+> If the drafted primary artist is listed only after Featuring, feat., or with in the Billboard artist credit, the recording is ineligible for that roster and its correct chart position is 0.
+
+Evidence quote: `Taylor Swift Featuring Post Malone`.
+
+Code rescore: 15 → 0 points, position 8 → 0. Challenger three-point bond: **RETURNED**, without a points adjustment. No native GEN bond existed or was claimed. This is a points-bond return, not an additional wei transfer.
+
+Custom eligibility is applied through a finalized dispute for each challenged item. This showcased correction concerns the May 25 week; other weeks retain their actual unchallenged generic matches.
+
+| Step | Finalized receipt |
+| --- | --- |
+| League creation | [Create](https://explorer-studio.genlayer.com/tx/0xb375f3a1fcf15c9e0dc66947e8bda9456fdd5c43a38c590125829a52b2633c51) |
+| Chart 2024-05-25 | [Reader](https://explorer-studio.genlayer.com/tx/0xf5caabc679a8ac9d130f16aa45708dbd7ee1d7ea1db0bba49adff5d0e1af4707) · [Finality callback](https://explorer-studio.genlayer.com/tx/0xfd39df3dca6f265c86915ee4bf3e9ef9626c82a90bc2c5bde309949d104cdddc) |
+| Chart 2024-06-01 | [Reader](https://explorer-studio.genlayer.com/tx/0x4a1977522fce3add54e5145c26b51c42bb9a0e9957cf86ae06396cb3309ecaf5) · [Finality callback](https://explorer-studio.genlayer.com/tx/0xf1abc3401b8896493fb7d51602ddda74a7567af5cd3a8db8e5136ea4461d1461) |
+| Chart 2024-06-08 | [Reader](https://explorer-studio.genlayer.com/tx/0xec42d1b39a9bc60906565846a48b18dc656648293a1f43c5e347f558b6433b07) · [Finality callback](https://explorer-studio.genlayer.com/tx/0xa96e3e2495f468273415178dece1403d9d5f473523bf61d9c225b65d2ab8ea18) |
+| Chart 2024-06-15 | [Reader](https://explorer-studio.genlayer.com/tx/0xa05b722025b5bee5fff4885428dd241834d38e6f105e0c9012a71566f252cf62) · [Finality callback](https://explorer-studio.genlayer.com/tx/0x22a3b1a4ab94e98641d8483befe28cde6971db06fcbb548fdba427df22119b8f) |
+| Dispute registration | [Open dispute](https://explorer-studio.genlayer.com/tx/0x80b61861b7a8b9373a408a71953193476747e3d94fc453d7eeba1e3df99a9633) · [League callback](https://explorer-studio.genlayer.com/tx/0x0db282e77ac041359e85fe6b36e822b509b0703e1af51a2ecf845ef0e1d307bc) |
+| Actual ruling | [OVERTURNED](https://explorer-studio.genlayer.com/tx/0xf3c73cfaa41a3f183f13db2959cf11e8f6a12f0ddc4bd58ab45afac312e29213) · [Finality callback](https://explorer-studio.genlayer.com/tx/0x3099f73563d9716baa2df59ea759deb73bb9925e84e142baf5ee9bad00c2a68d) |
+| Rescore and points-bond return | [Close and score May 25](https://explorer-studio.genlayer.com/tx/0xc40d1b4b7a058a20e8d5adec0e360aa27c7b1d195d5f36fe709f8df2af7b4dfb) |
+| Completed case season | [Close final case week](https://explorer-studio.genlayer.com/tx/0x5b8c4cd8f4ff724cf43a85dedcb5b27b10fe05a060e67ad49a99bfbaac9a8ecf) · [Season completion callback](https://explorer-studio.genlayer.com/tx/0xd3b9a80965f8afc2095eb4a8f56ea1af9d72d56ebbcccead9243ba3c5d28b7ed) |
+
+Every join, draft pick, ready call, read retry and child is retained in `deploy/proof.json` and `deploy/receipts/custom-*.json`.
+
+Final audit: **exit code 0**, 191 successful replay receipts and 2 separately retained failed receipt(s), five deployed sources, ten full chart digests, independent scores/standings, main native payouts, custom rescore and returned points bond verified.
+
+Checks rerun: 39 direct contract tests, five release-resume tests, seven app tests, strict TypeScript. Final Vercel production build and strict build TypeScript passed; npm ci audited zero vulnerabilities. Production 1440x960 and 390x844 browser checks passed with no horizontal overflow, correct main/case navigation, reload persistence and the ready proof page. Both production API snapshots returned COMPLETED / submissionReady true and roster-only rows. Browser error logs were empty. Existing five-contract GenVM lint results are unchanged; contract sources were not modified.
+
+The first custom Court submission ended in a finalized consensus disagreement and is preserved separately. The successful resubmission used the same frozen clause; no verdict was overridden, no prompt was changed and no mock supplied the ruling.
+
+Production deployment: [READY build](https://vercel.com/wattxs-projects/hot-roster-genlayer/AZDQQSZ7dXWHsebseXn8VYEvDQNE). [Desktop/mobile browser evidence](browser-custom-case-production-check.json) · [Public API evidence](deployed-custom-case-api-check.json).

@@ -7,7 +7,8 @@ export type ChartRead={status?:string;verdict?:string;songs?:Song[];matches?:{po
 export type Moment={id:string;status:string;week:number;song:Song;card:Card;url:string;verdict:string|null;quote:string;reason:string;deadline:number;finalized_at?:number;claimant:string};
 export type Dispute={id:string;status:string;week:number;item_id:string;item:{kind:string;song:Song;url:string;original_verdict:string|number};argument:string;challenger:string;opponent:string;verdict:string|null;rule_quote:string;evidence_quote:string;reason:string;deadline:number;finalized_at?:number;corrected_position?:number;corrected_verdict?:string;bond_recipient?:string;gen_bond:string;bond_claimed:boolean};
 export type Pool={status?:string;entries?:Record<string,string>;total?:string;payouts?:Record<string,string>;claims?:Record<string,{status:string;attempt:number;amount:string;parent:string;child:string;verification_deadline:number}>;paid?:string;deadline?:number};
-export type Snapshot={league?:LeagueRecord;weeks:ChartRead[];moments:Moment[];disputes:Dispute[];pool:Pool|null;recordedAt?:string;completed?:boolean;submissionReady?:boolean;contracts:Record<string,{address:string;sha256:string;source:string}>;transactions:Record<string,string>;sourceCommit?:string|null;blockers?:string[];probeContract?:string};
+export type CustomRulebookCase={leagueId?:string;league?:LeagueRecord;weeks:ChartRead[];moments:Moment[];disputes:Dispute[];transactions:Record<string,string>;recordedAt?:string;targetKey?:string;genericMatch?:{position:number;reason:string};targetRow?:{position:number;title:string;artist_credit:string};rescore?:{genericPosition:number;genericPoints:number;correctedPosition:number;correctedPoints:number;bondStatus:string;pointsBond:number;genBondWei:string;challenger:string;receipt:string}};
+export type Snapshot={league?:LeagueRecord;weeks:ChartRead[];moments:Moment[];disputes:Dispute[];pool:Pool|null;recordedAt?:string;completed?:boolean;submissionReady?:boolean;contracts:Record<string,{address:string;sha256:string;source:string}>;transactions:Record<string,string>;sourceCommit?:string|null;blockers?:string[];probeContract?:string;customRulebookCase?:CustomRulebookCase;mainLeagueId?:string};
 export type TxState='SUBMITTED'|'PENDING'|'ACCEPTED'|'FINALIZED_SUCCESS'|'FINALIZED_ERROR';
 export type TrackedTx={hash:string;label:string;account:string;state:TxState;created:number;children?:string[];appealDeadline?:number|null;error?:string};
 export function transactionState(r:Record<string,unknown>):TxState{
@@ -25,6 +26,14 @@ export function transactionState(r:Record<string,unknown>):TxState{
 export function rosterOnly(chart:ChartRead):ChartRead{
  const positions=new Set(chart.matches?.map(m=>m.position)??[]);
  return {...chart,rows:chart.rows?.filter(row=>positions.has(row.position))};
+}
+export function publicCustomCase(value:CustomRulebookCase|undefined):CustomRulebookCase|undefined{
+ return value?{...value,weeks:value.weeks.map(rosterOnly)}:undefined;
+}
+export function recordedSnapshot(value:Snapshot,leagueId?:string):Snapshot{
+ const customRulebookCase=publicCustomCase(value.customRulebookCase),mainLeagueId=value.league?.id;
+ if(leagueId&&customRulebookCase?.leagueId===leagueId&&customRulebookCase.league)return {...value,league:customRulebookCase.league,weeks:customRulebookCase.weeks,moments:customRulebookCase.moments,disputes:customRulebookCase.disputes,pool:null,transactions:customRulebookCase.transactions,recordedAt:customRulebookCase.recordedAt,customRulebookCase,mainLeagueId};
+ return {...value,weeks:value.weeks.map(rosterOnly),customRulebookCase,mainLeagueId};
 }
 export function shortAddress(value:string){return value.slice(0,6)+'…'+value.slice(-4)}
 export function draftTurn(league:LeagueRecord){const i=league.draft.length,n=league.players.length;return n?league.players[Math.floor(i/n)%2===0?i%n:n-1-i%n]:null}

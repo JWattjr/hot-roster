@@ -8,7 +8,7 @@ Friends draft five songs, play weekly head-to-head matchups, and challenge chart
 
 ## Release status
 
-The real six-week StudioNet season is completed and all 40 entry wei were credited to the top three teams. `deploy/proof.json` is the authoritative receipt manifest. Both actual Court decisions are UPHELD; the required live OVERTURNED result is missing, so `completed` and `submissionReady` remain false. No mocked verdict fills that gap. See the [release report](docs/RELEASE_REPORT.md) and [verification scope](docs/VERIFICATION.md).
+The real six-week StudioNet season is completed and all 40 entry wei were credited. The existing contracts also host a completed four-week custom-rulebook case: Fortnight drafted under featured artist Post Malone is generically matched, then OVERTURNED under a frozen lead-credit clause, rescored to zero, and its three-point bond returned. No additional GEN deposits or contract redeployments were needed. The strict read-only verifier passes and `completed` / `submissionReady` are true. See the [release report](docs/RELEASE_REPORT.md) and [verification scope](docs/VERIFICATION.md).
 
 ## Architecture
 
@@ -72,6 +72,8 @@ Deploy with a remote Vercel build under `wattxs-projects`; Windows local prebuil
 ## Limits and recovery
 
 Archive selection uses an exact successful CDX capture of the dated chart URL. A failed archive fetch remains insufficient evidence rather than silently switching sources. Only an empty CDX result permits live-page fallback. HTML structure changes can require a new deployment. The browser receives only rows matching rostered songs and links to Billboard, rather than republishing the complete chart.
+
+The final-week archive.org capture intermittently returns HTTP 503; the finalized judgment that used it is preserved.
 
 Evidence must use HTTPS and an allowlisted original domain, an exact archive `id_` capture inside the chart week verified through CDX, or an English Wikipedia permanent revision. Claims are bounded to three per player/week and each card once per song/week. Embedded instructions are untrusted. Source access or validator disagreement can leave judgments retryable until their deadlines; code then supplies zero chart points or no unresolved bonus.
 

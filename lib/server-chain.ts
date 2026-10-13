@@ -5,7 +5,7 @@ import {studionet} from 'genlayer-js/chains';
 import {TransactionHashVariant} from 'genlayer-js/types';
 import type {TransactionHash} from 'genlayer-js/types';
 import proof from '@/deploy/proof.json';
-import {rosterOnly,transactionState,type Snapshot,type LeagueRecord,type ChartRead,type Moment,type Dispute,type Pool} from './domain';
+import {rosterOnly,publicCustomCase,transactionState,type Snapshot,type LeagueRecord,type ChartRead,type Moment,type Dispute,type Pool} from './domain';
 const client=createClient({chain:studionet,endpoint:'https://studio.genlayer.com/api'});
 const contracts=proof.contracts as Record<string,{address:string}>;
 let calls:number[]=[];
@@ -31,14 +31,15 @@ export async function leagueSnapshot(id:string):Promise<Snapshot>{
  const moments:Moment[]=[],disputes:Dispute[]=[];
  for(const key of momentIds)moments.push(await read<Moment>('MomentJudge','get_claim',[key],30000,resolved));
  for(const key of disputeIds)disputes.push(await read<Dispute>('RulebookCourt','get_dispute',[key],30000,value=>resolved(value)&&(value.gen_bond==='0'||value.bond_claimed)));
- const pool=await read<Pool>('SeasonPool','get_pool',[id]);
+ const pool=BigInt(league.entry_fee)>0n?await read<Pool>('SeasonPool','get_pool',[id],30000,value=>value.status==='SETTLED'&&value.paid===value.total):null;
  const weeks:ChartRead[]=[];
  for(let i=0;i<league.weeks.length;i++){
   if(league.weeks[i].status==='OPEN'){weeks.push({});continue}
   const chart=await read<ChartRead>('ChartReader','get_read',[id,i],30000,value=>resolved(value)||league.weeks[i].status==='CLOSED');
   weeks.push(rosterOnly(chart));
  }
- return {league,weeks,moments,disputes,pool,recordedAt:new Date().toISOString(),contracts:(proof as unknown as Snapshot).contracts,transactions:id===proof.leagueId?proof.transactions:{},sourceCommit:proof.sourceCommit,submissionReady:id===proof.leagueId&&proof.submissionReady,blockers:id===proof.leagueId?proof.blockers:[],completed:league.status==='COMPLETED'};
+ const customRulebookCase=publicCustomCase((proof as unknown as Snapshot).customRulebookCase);
+ return {league,weeks,moments,disputes,pool,recordedAt:new Date().toISOString(),contracts:(proof as unknown as Snapshot).contracts,transactions:id===proof.leagueId?proof.transactions:id===customRulebookCase?.leagueId?customRulebookCase.transactions:{},sourceCommit:proof.sourceCommit,submissionReady:proof.submissionReady,blockers:proof.blockers,completed:league.status==='COMPLETED',customRulebookCase,mainLeagueId:proof.leagueId};
 }
 export async function transaction(hash:string){
  return limited('tx:'+hash,async()=>{

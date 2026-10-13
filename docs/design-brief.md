@@ -20,4 +20,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Quality bar
 
+Custom-rulebook extension: preserve the operating score sheet. The main season and custom case have explicit navigation. The case follows one actual week through generic match, frozen-rulebook ruling and code rescore; each step carries evidence or a receipt. Recorded case proof stays labelled separately from live league reads. Stack the three steps at compact widths. No new raster artwork or replacement visual world is introduced.
+
 Readable 390×844 controls; no horizontal page overflow; visible score hierarchy; honest empty states; accessible native forms; evidence quotes and actual transaction links. Raster artwork is not part of this operating surface.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {transactionState,rosterOnly,chartDates,score,draftTurn,type LeagueRecord} from '../lib/domain';
+import {transactionState,rosterOnly,recordedSnapshot,chartDates,score,draftTurn,type LeagueRecord,type Snapshot} from '../lib/domain';
 test('finality requires execution success and consensus agreement',()=>{
  assert.equal(transactionState({status:'ACCEPTED',txExecutionResultName:'FINISHED_WITH_RETURN'}),'ACCEPTED');
  assert.equal(transactionState({status:'FINALIZED',result_name:'MAJORITY_DISAGREE',txExecutionResultName:'FINISHED_WITH_RETURN'}),'FINALIZED_ERROR');
@@ -12,6 +12,19 @@ test('finality requires execution success and consensus agreement',()=>{
 test('UI publishes only roster positions',()=>{
  const rows=Array.from({length:100},(_,i)=>({position:i+1,title:'Song '+i,artist_credit:'Artist',last_week:0,debut:false}));
  assert.deepEqual(rosterOnly({rows,matches:[{position:1,reason:'Same song'},{position:0,reason:'Absent'},{position:10,reason:'Same song'}]}).rows?.map(r=>r.position),[1,10]);
+});
+test('custom league selection preserves recorded state and filters both chart datasets',()=>{
+ const rows=Array.from({length:100},(_,i)=>({position:i+1,title:'Song '+i,artist_credit:'Artist',last_week:0,debut:false}));
+ const main={id:'league-1'} as LeagueRecord,custom={id:'league-2'} as LeagueRecord;
+ const chart={rows,matches:[{position:8,reason:'Featured artist'}]};
+ const value={league:main,weeks:[chart],moments:[],disputes:[],pool:null,contracts:{},transactions:{main:'0xmain'},customRulebookCase:{leagueId:'league-2',league:custom,weeks:[chart],moments:[],disputes:[],transactions:{custom:'0xcustom'}}} as Snapshot;
+ const publicMain=recordedSnapshot(value);
+ assert.equal(publicMain.league?.id,'league-1');assert.equal(publicMain.weeks[0].rows?.length,1);
+ assert.equal(publicMain.customRulebookCase?.weeks[0].rows?.length,1);
+ const selected=recordedSnapshot(value,'league-2');
+ assert.equal(selected.league?.id,'league-2');assert.equal(selected.mainLeagueId,'league-1');
+ assert.deepEqual(selected.transactions,{custom:'0xcustom'});assert.equal(selected.weeks[0].rows?.length,1);
+ assert.equal(value.customRulebookCase?.weeks[0].rows?.length,100);
 });
 test('season dates and scoring boundaries',()=>{
  assert.deepEqual(chartDates('2024-05-25',4),['2024-05-25','2024-06-01','2024-06-08','2024-06-15']);
